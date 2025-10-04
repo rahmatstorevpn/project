@@ -65,7 +65,7 @@ fun_bar() {
     tput cnorm
 }
 res1() {
-    wget https://raw.githubusercontent.com/sehuadri/project/main/menu/menu.zip
+    wget https://raw.githubusercontent.com/rahmatstorevpn/project/main/menu/menu.zip
     unzip -P miqdad12 menu.zip
     chmod +x menu/*
     mv menu/* /usr/local/sbin
