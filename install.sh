@@ -22,7 +22,7 @@ NC='\033[0m'
 tampilan() {
     local my_ip allowed_ips_url today matched_line exp_date_or_lifetime
 
-    allowed_ips_url="https://raw.githubusercontent.com/sehuadri/project/main/ip"
+    allowed_ips_url="https://raw.githubusercontent.com/rahmatstorevpn/project/main/ip"
     echo -e "\n${BIWhite}[ ${BIYellow}INFO${BIWhite} ] Mengecek izin akses...${NC}"
     
     my_ip=$(curl -sS ipv4.icanhazip.com | tr -d '\r')
@@ -140,7 +140,7 @@ echo ""
 read -p "$( echo -e "${BIWhite}Press ${LIME}[${BIWhite} Enter ${LIME}]${BIWhite} For Starting Installation${NC}") "
 echo ""
 clear
-REPO="https://raw.githubusercontent.com/sehuadri/project/main/"
+REPO="https://raw.githubusercontent.com/rahmatstorevpn/project/main/"
 start=$(date +%s)
 secs_to_human() {
     echo "Installation time : $((${1} / 3600)) hours $(((${1} / 60) % 60)) minute's $((${1} % 60)) seconds"
@@ -309,7 +309,7 @@ function memasang_domain() {
 memasang_notifikasi_bot() {
   clear
   local MYIP=$(curl -sS ipv4.icanhazip.com)
-  local izinsc="https://raw.githubusercontent.com/sehuadri/project/main/ip"
+  local izinsc="https://raw.githubusercontent.com/rahmatstorevpn/project/main/ip"
   
   local IP_DATA_LINE=$(curl -s "$izinsc" | grep -w "$MYIP" | head -1)
 
