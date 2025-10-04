@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 install_services() {
-    local REPO="https://raw.githubusercontent.com/sehuadri/project/main/files/"
+    local REPO="https://raw.githubusercontent.com/rahmatstorevpn/project/main/files/"
     local LIMIT_IP_SERVICES=("limiter-vm" "limiter-vl" "limiter-trj" "limiter-shd" "limiter-ssh")
     local LIMIT_IP_REMOTE_FILES=("lite-vm" "lite-vl" "lite-trj" "lite-shd" "lite-ssh")
     local LIMIT_QUOTA_SERVICES=("limitvmess" "limitvless" "limittrojan" "limitshadowsocks")
