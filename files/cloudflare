@@ -1,0 +1,92 @@
+#!/bin/bash
+ungu="\e[38;5;99m"
+BIWhite="\033[1;97m"
+BIYellow="\033[1;93m"
+LIME='\e[38;5;155m'
+NC='\e[0m'
+IP=$(wget -qO- icanhazip.com)
+
+apt install jq curl -y >/dev/null 2>&1
+clear
+echo -e ""
+echo -e "${BIWhite}┌──────────────────────────────────────┐${NC}"
+echo -e "${LIME}          Setup Subdomain Menu        ${NC}"
+echo -e "${BIWhite}└──────────────────────────────────────┘${NC}"
+
+DOMAIN=hahah.fun
+CF_KEY=266a89fba5c8824b989d663b382ba84f06d17
+CF_ID=qwqw34207@gmail.com
+set -euo pipefail
+
+ZONE=$(curl -sLX GET "https://api.cloudflare.com/client/v4/zones?name=${DOMAIN}&status=active" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" | jq -r .result[0].id)
+
+echo -e "${BIWhite}Contoh Subdomain:${NC} ${BIYellow}test123${NC}"
+read -p "Input Subdomain : " domen
+sub=${domen}
+dns=${sub}.${DOMAIN}
+nameserver="ns-${sub}.${DOMAIN}"
+
+EXISTING_SUB=$(curl -sLX GET "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records?type=A&content=${IP}" \
+    -H "X-Auth-Email: ${CF_ID}" \
+    -H "X-Auth-Key: ${CF_KEY}" \
+    -H "Content-Type: application/json" | jq -r '.result[0].name')
+
+if [[ "$EXISTING_SUB" != "null" && "$EXISTING_SUB" != "$dns" ]]; then
+    echo -e "${BIYellow}IP ${IP} sudah dipakai oleh subdomain: ${EXISTING_SUB}${NC}"
+    dns=$EXISTING_SUB
+    sub=$(echo "$dns" | cut -d. -f1)
+    nameserver="ns-${sub}.${DOMAIN}"
+    echo -e "${BIWhite}Akan menggunakan subdomain lama tersebut.${NC}"
+fi
+
+RECORD=$(curl -sLX GET "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records?name=${dns}" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" | jq -r .result[0].id)
+
+if [[ "${#RECORD}" -le 10 ]]; then
+     RECORD=$(curl -sLX POST "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" \
+     --data '{"type":"A","name":"'${dns}'","content":"'${IP}'","ttl":120,"proxied":false}' | jq -r .result.id)
+fi
+
+curl -sLX PUT "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records/${RECORD}" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" \
+     --data '{"type":"A","name":"'${dns}'","content":"'${IP}'","ttl":120,"proxied":false}' >/dev/null
+
+echo -e "${BIWhite}Mengatur NS Record Untuk ${nameserver}${NC}"
+
+NS_RECORD_ID=$(curl -sLX GET "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records?type=NS&name=${nameserver}" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" | jq -r .result[0].id)
+
+if [[ "${#NS_RECORD_ID}" -le 10 ]]; then
+     NS_RECORD_ID=$(curl -sLX POST "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" \
+     --data '{"type":"NS","name":"'${nameserver}'","content":"'${dns}'","ttl":120,"proxied":false}' | jq -r .result.id)
+else
+     echo -e "${BIWhite}NS record ${nameserver} sudah ada, tidak dibuat ulang.${NC}"
+fi
+
+curl -sLX PUT "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records/${NS_RECORD_ID}" \
+     -H "X-Auth-Email: ${CF_ID}" \
+     -H "X-Auth-Key: ${CF_KEY}" \
+     -H "Content-Type: application/json" \
+     --data '{"type":"NS","name":"'${nameserver}'","content":"'${dns}'","ttl":120,"proxied":false}' >/dev/null
+
+echo "$dns" > /root/domain
+echo "$dns" > /etc/xray/domain
+echo "$nameserver" > /root/nsdomain
+echo "$nameserver" > /etc/xray/dns
+echo "IP=$dns" > /var/lib/ipvps.conf
+cd
