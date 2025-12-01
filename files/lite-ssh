@@ -1,0 +1,146 @@
+#!/bin/bash
+UNLOCK_DELAY_MINUTES=5
+function send_ip_notification() {
+    local user="$1"
+    local limit_ip="$2"
+    local ip_count="$3"
+    local CHATID=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 3)
+    local KEY=$(grep -E "^#bot# " "/etc/bot/.bot.db" | cut -d ' ' -f 2)
+    local URL="https://api.telegram.org/bot$KEY/sendMessage"
+    local TEXT="
+<code>────────────────────</code>
+<b>⚠️ NOTIFICATIONS ⚠️</b>
+<code>────────────────────</code>
+<b>» Protocol:</b> <code>SSH</code>
+<b>» User:</b> <code>${user}</code>
+<b>» Limit IP:</b> <code>${limit_ip} IP</code>
+<b>» IP Login:</b> <code>${ip_count} IP</code>
+<b>» Status:</b> <code>User telah dikunci</code>
+<b>» Durasi Penguncian 5 Menit</b>
+<code>────────────────────</code>
+<b>» 🤖 Awokawok Kena Lock...</b>
+<code>────────────────────</code>
+"
+    curl -s --max-time 10 -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html" "$URL" >/dev/null
+}
+function kill_user_sessions() {
+    local username="$1"
+    echo "🔒 Memutus semua sesi user: $username"
+    pgrep -u "$username" -f 'sshd:' | xargs -r kill -9
+    pgrep -u "$username" dropbear | xargs -r kill -9
+    who | grep "^$username" | awk '{print $2}' | while read tty; do
+        pkill -9 -t "$tty"        
+    done
+    systemctl restart ws-stunnel 2>/dev/null
+    systemctl restart dropbear 2>/dev/null
+    systemctl restart sshd 2>/dev/null
+}
+function lock_user() {
+    local username="$1"
+    if [[ "$username" == "root" ]]; then
+        return 0
+    fi
+    if id "$username" &>/dev/null; then
+        kill_user_sessions "$username"
+        
+        passwd -l "$username" 2>/dev/null
+       
+        (echo "passwd -u \"$username\""; echo "sleep 5"; echo "/usr/local/sbin/buka_kunci_ssh \"$username\"") | at now + ${UNLOCK_DELAY_MINUTES} minutes 2>/dev/null
+    fi
+}
+function collect_raw_login_data() {
+    local LOG_FILE
+    if [ -e "/var/log/auth.log" ]; then
+        LOG_FILE="/var/log/auth.log"
+    elif [ -e "/var/log/secure" ]; then
+        LOG_FILE="/var/log/secure"
+    else
+        echo "Log file not found! SSH/Dropbear login detection will not work." >&2
+        return 1
+    fi
+    > /tmp/user_login_ips.txt
+    > /tmp/login-db.txt
+    > /tmp/login-sshd.txt
+    local dropbear_pids=($(ps aux | grep -i dropbear | awk '{print $2}'))
+    grep -i "dropbear" "$LOG_FILE" | grep -i "Password auth succeeded" > /tmp/login-db.txt
+    for PID in "${dropbear_pids[@]}"; do
+        local login_info=$(grep "dropbear\[$PID\]" /tmp/login-db.txt)
+        if [ -n "$login_info" ]; then
+            local USER_LOG=$(echo "$login_info" | awk '{print $10}')
+            local IP_LOG=$(echo "$login_info" | awk '{print $12}')
+            echo "$USER_LOG $IP_LOG" >> /tmp/user_login_ips.txt
+        fi
+    done
+    grep -i "sshd" "$LOG_FILE" | grep -i "Accepted password for" > /tmp/login-sshd.txt
+    local sshd_pids=($(ps aux | grep "\[priv\]" | awk '{print $2}'))
+    for PID in "${sshd_pids[@]}"; do
+        local login_info=$(grep "sshd\[$PID\]" /tmp/login-sshd.txt)
+        if [ -n "$login_info" ]; then
+            local USER_LOG=$(echo "$login_info" | awk '{print $9}')
+            local IP_LOG=$(echo "$login_info" | awk '{print $11}')
+            echo "$USER_LOG $IP_LOG" >> /tmp/user_login_ips.txt
+        fi
+    done
+    cat /tmp/user_login_ips.txt | sort | uniq > /tmp/unique_user_login_ips.txt
+    return 0
+}
+function display_logins_output() {
+    clear
+    local users_for_display=($(awk '{print $1}' /tmp/unique_user_login_ips.txt | sort -u))
+    for user in "${users_for_display[@]}"; do
+        local ip_count=$(grep -w "$user" /tmp/unique_user_login_ips.txt | awk '{print $2}' | sort -u | wc -l)
+        echo "User: $user - IP Count: $ip_count"
+        echo "Logged IPs:"
+        if [ "$ip_count" -gt 0 ]; then
+            grep -w "$user" /tmp/unique_user_login_ips.txt | awk '{print $2}' | sort -u | nl
+        else
+            echo "  Tidak ada IP aktif terdeteksi."
+        fi
+        echo ""
+    done
+    if [ -f "/etc/openvpn/server/openvpn-tcp.log" ]; then
+        echo ""
+        grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-tcp.log | cut -d ',' -f 2,3,8 | sed -e 's/,/             /g'
+    fi
+    if [ -f "/etc/openvpn/server/openvpn-udp.log" ]; then
+        echo ""
+        grep -w "^CLIENT_LIST" /etc/openvpn/server/openvpn-udp.log | cut -d ',' -f 2,3,8 | sed -e 's/,/             /g'
+    fi
+}
+function apply_lock_logic() {
+    local all_managed_users=($(awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd | sort -u))
+    for user in "${all_managed_users[@]}"; do
+        local limit_ip_file="/etc/limit/ssh/ip/$user"
+        local limit_ip="1"
+        if [ -f "$limit_ip_file" ]; then
+            local FILE_CONTENT=$(cat "$limit_ip_file" 2>/dev/null)
+            if [[ "$FILE_CONTENT" =~ ^[0-9]+$ ]]; then
+                limit_ip="${FILE_CONTENT}"
+            fi
+        fi
+        local ip_count=$(grep -w "$user" /tmp/unique_user_login_ips.txt 2>/dev/null | awk '{print $2}' | sort -u | wc -l)
+        if [[ "$ip_count" -gt "$limit_ip" ]]; then
+            if [[ "$user" != "root" ]]; then
+                if ! passwd -S "$user" | awk '{print $2}' | grep -q "L"; then
+                    send_ip_notification "$user" "$limit_ip" "$ip_count"
+                    lock_user "$user"
+                fi
+            fi
+        fi
+    done
+}
+
+function memulai_pengecekan() {
+    collect_raw_login_data
+    if [ $? -ne 0 ]; then
+        sleep 2
+        return
+    fi
+    apply_lock_logic
+    display_logins_output
+    rm -f /tmp/login-db.txt /tmp/login-sshd.txt /tmp/user_login_ips.txt /tmp/unique_user_login_ips.txt
+    echo -n > /var/log/auth.log
+    sleep 2
+}
+
+memulai_pengecekan
