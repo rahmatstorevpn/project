@@ -6,19 +6,41 @@ import asyncio
 import schedule
 import threading
 import logging
+import signal
+import daemon
 from datetime import datetime
+from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Konfigurasi logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Konfigurasi path
+BASE_DIR = Path("/opt/backup-bot")
+CONFIG_FILE = BASE_DIR / ".bckupbot"
+LOG_FILE = BASE_DIR / "backup-bot.log"
+PID_FILE = BASE_DIR / "backup-bot.pid"
 
-# Path file konfigurasi
-CONFIG_FILE = "/var/www/.bckupbot"
+# Pastikan direktori ada
+BASE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Konfigurasi logging
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+formatter = logging.Formatter(log_format)
+
+# Handler untuk file log
+file_handler = logging.FileHandler(LOG_FILE)
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.INFO)
+
+# Handler untuk console
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+console_handler.setLevel(logging.INFO)
+
+# Setup logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 class BackupBot:
     def __init__(self):
@@ -27,7 +49,21 @@ class BackupBot:
         self.backup_status = "off"
         self.current_interval = None
         self.application = None
-        self.loop = None  # Menyimpan event loop
+        self.loop = None
+        self.is_running = True
+        self.setup_signal_handlers()
+        
+    def setup_signal_handlers(self):
+        """Setup signal handlers untuk graceful shutdown"""
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        
+    def signal_handler(self, signum, frame):
+        """Handler untuk signal shutdown"""
+        logger.info(f"📩 Menerima signal {signum}, melakukan shutdown...")
+        self.is_running = False
+        if self.application:
+            self.application.stop()
         
     def check_config(self):
         """Memeriksa konfigurasi dan menghentikan program jika tidak valid"""
@@ -52,7 +88,6 @@ class BackupBot:
         try:
             # Validasi admin_id harus angka
             if not isinstance(self.admin_id, int):
-                # Jika dari file konfigurasi, admin_id masih string
                 self.admin_id = int(self.admin_id)
             return True
         except ValueError:
@@ -65,7 +100,7 @@ class BackupBot:
     def load_config(self):
         """Memuat konfigurasi dari file"""
         try:
-            if os.path.exists(CONFIG_FILE):
+            if CONFIG_FILE.exists():
                 with open(CONFIG_FILE, 'r') as f:
                     lines = [line.strip() for line in f.readlines() if line.strip()]
                     
@@ -94,9 +129,6 @@ class BackupBot:
     def save_config(self):
         """Menyimpan konfigurasi ke file"""
         try:
-            # Pastikan direktori ada
-            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-            
             with open(CONFIG_FILE, 'w') as f:
                 f.write(f"{self.token}\n")
                 f.write(f"{self.admin_id}\n")
@@ -504,21 +536,39 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def schedule_runner():
     """Menjalankan scheduler di thread terpisah"""
-    while True:
+    logger.info("⏰ Scheduler thread dimulai")
+    while bot.is_running:
         schedule.run_pending()
         time.sleep(1)
+    logger.info("⏰ Scheduler thread dihentikan")
+
+def write_pid_file():
+    """Menulis PID ke file"""
+    try:
+        with open(PID_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        logger.info(f"📝 PID file dibuat: {PID_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Gagal menulis PID file: {e}")
+
+def remove_pid_file():
+    """Menghapus PID file"""
+    try:
+        if PID_FILE.exists():
+            PID_FILE.unlink()
+            logger.info(f"🗑️ PID file dihapus: {PID_FILE}")
+    except Exception as e:
+        logger.error(f"❌ Gagal menghapus PID file: {e}")
 
 def create_config_file():
     """Membuat file konfigurasi contoh jika tidak ada"""
-    if not os.path.exists(CONFIG_FILE):
+    if not CONFIG_FILE.exists():
         try:
-            os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-            
             example_config = """YOUR_BOT_TOKEN_HERE
 YOUR_ADMIN_ID_NUMBER
 off
 6h
-            
+
 # Format file konfigurasi:
 # Line 1: Bot Token dari @BotFather
 # Line 2: Admin ID (numeric, gunakan @userinfobot untuk mendapatkan ID)
@@ -536,30 +586,76 @@ off
             return False
     return True
 
-def main():
-    """Fungsi utama"""
-    print("=" * 50)
-    print("🤖 BACKUP BOT VPS")
-    print("=" * 50)
+def run_as_daemon():
+    """Menjalankan sebagai daemon"""
+    logger.info("👻 Menjalankan sebagai daemon...")
+    
+    # Ganti direktori kerja
+    os.chdir('/')
+    
+    # Fork pertama
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # Parent process keluar
+            sys.exit(0)
+    except OSError as e:
+        logger.error(f"❌ Fork pertama gagal: {e}")
+        sys.exit(1)
+    
+    # Dekouple dari terminal
+    os.setsid()
+    os.umask(0)
+    
+    # Fork kedua
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # Parent process keluar
+            sys.exit(0)
+    except OSError as e:
+        logger.error(f"❌ Fork kedua gagal: {e}")
+        sys.exit(1)
+    
+    # Redirect standard file descriptors
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    si = open(os.devnull, 'r')
+    so = open(os.devnull, 'a+')
+    se = open(os.devnull, 'a+')
+    
+    os.dup2(si.fileno(), sys.stdin.fileno())
+    os.dup2(so.fileno(), sys.stdout.fileno())
+    os.dup2(se.fileno(), sys.stderr.fileno())
+    
+    # Tulis PID file
+    write_pid_file()
+
+def run_bot():
+    """Fungsi utama untuk menjalankan bot"""
+    logger.info("=" * 50)
+    logger.info("🤖 BACKUP BOT VPS")
+    logger.info("=" * 50)
     
     # Buat file konfigurasi contoh jika tidak ada
-    if not os.path.exists(CONFIG_FILE):
-        print(f"📄 Membuat file konfigurasi contoh di: {CONFIG_FILE}")
+    if not CONFIG_FILE.exists():
+        logger.info(f"📄 Membuat file konfigurasi contoh di: {CONFIG_FILE}")
         create_config_file()
     
     # Cek konfigurasi
-    print("🔍 Memeriksa konfigurasi...")
+    logger.info("🔍 Memeriksa konfigurasi...")
     if not bot.check_config():
-        print("\n❌ Bot tidak dapat dimulai karena konfigurasi tidak valid!")
-        print(f"📝 Silakan edit file: {CONFIG_FILE}")
-        print("🔄 Setelah mengedit, jalankan bot kembali.")
+        logger.error("\n❌ Bot tidak dapat dimulai karena konfigurasi tidak valid!")
+        logger.error(f"📝 Silakan edit file: {CONFIG_FILE}")
+        logger.error("🔄 Setelah mengedit, jalankan bot kembali.")
         sys.exit(1)
     
-    print("✅ Konfigurasi valid!")
-    print(f"   Token: {'*' * 20}{bot.token[-10:] if bot.token else 'N/A'}")
-    print(f"   Admin ID: {bot.admin_id}")
-    print(f"   Status: {bot.backup_status}")
-    print(f"   Interval: {bot.current_interval}")
+    logger.info("✅ Konfigurasi valid!")
+    logger.info(f"   Token: {'*' * 20}{bot.token[-10:] if bot.token else 'N/A'}")
+    logger.info(f"   Admin ID: {bot.admin_id}")
+    logger.info(f"   Status: {bot.backup_status}")
+    logger.info(f"   Interval: {bot.current_interval}")
     
     # Buat event loop baru
     loop = asyncio.new_event_loop()
@@ -585,29 +681,132 @@ def main():
         schedule_thread = threading.Thread(target=schedule_runner, daemon=True)
         schedule_thread.start()
         
-        print("\n" + "=" * 50)
-        print("🚀 Backup Bot sedang berjalan...")
-        print("👤 Bot hanya merespons Admin ID:", bot.admin_id)
-        print("📊 Backup Status:", bot.backup_status)
-        print("⏰ Interval:", bot.current_interval if bot.current_interval else "Tidak aktif")
-        print("📱 Kirim /start ke bot untuk memulai")
-        print("⏹️ Tekan Ctrl+C untuk berhenti")
-        print("=" * 50 + "\n")
+        logger.info("\n" + "=" * 50)
+        logger.info("🚀 Backup Bot sedang berjalan...")
+        logger.info("👤 Bot hanya merespons Admin ID: %s", bot.admin_id)
+        logger.info("📊 Backup Status: %s", bot.backup_status)
+        logger.info("⏰ Interval: %s", bot.current_interval if bot.current_interval else "Tidak aktif")
+        logger.info("📱 Kirim /start ke bot untuk memulai")
+        logger.info("📝 Log disimpan di: %s", LOG_FILE)
+        logger.info("=" * 50 + "\n")
         
         try:
             # Jalankan bot dalam event loop
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            application.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
         except KeyboardInterrupt:
-            print("\n🛑 Bot dihentikan...")
+            logger.info("\n🛑 Bot dihentikan oleh user...")
+        except Exception as e:
+            logger.error(f"❌ Error saat polling: {e}")
         finally:
+            bot.is_running = False
             if loop and not loop.is_closed():
                 loop.close()
+            remove_pid_file()
+            logger.info("👋 Bot berhenti")
                 
     except Exception as e:
         logger.error(f"❌ Gagal memulai bot: {e}")
-        print(f"\n❌ Error: {e}")
-        print("💡 Pastikan token bot valid dan koneksi internet tersedia.")
+        logger.error("💡 Pastikan token bot valid dan koneksi internet tersedia.")
+        remove_pid_file()
         sys.exit(1)
+
+def main():
+    """Entry point utama"""
+    # Cek argumen command line
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+        
+        if command == "start":
+            # Jalankan sebagai daemon
+            run_as_daemon()
+            run_bot()
+        elif command == "stop":
+            # Hentikan daemon
+            if PID_FILE.exists():
+                try:
+                    with open(PID_FILE, 'r') as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, signal.SIGTERM)
+                    print(f"✅ Mengirim signal stop ke PID {pid}")
+                    time.sleep(2)
+                    remove_pid_file()
+                except Exception as e:
+                    print(f"❌ Gagal menghentikan: {e}")
+            else:
+                print("❌ PID file tidak ditemukan. Bot mungkin tidak berjalan.")
+        elif command == "status":
+            # Cek status
+            if PID_FILE.exists():
+                try:
+                    with open(PID_FILE, 'r') as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, 0)  # Cek apakah process masih hidup
+                    print(f"✅ Bot berjalan dengan PID {pid}")
+                    print(f"📝 Log file: {LOG_FILE}")
+                    print(f"⚙️ Config file: {CONFIG_FILE}")
+                except OSError:
+                    print("❌ PID ada tetapi process tidak berjalan")
+                    remove_pid_file()
+            else:
+                print("❌ Bot tidak berjalan")
+        elif command == "restart":
+            # Restart bot
+            if PID_FILE.exists():
+                try:
+                    with open(PID_FILE, 'r') as f:
+                        pid = int(f.read().strip())
+                    os.kill(pid, signal.SIGTERM)
+                    print(f"✅ Menghentikan bot (PID {pid})...")
+                    time.sleep(3)
+                except:
+                    pass
+            
+            # Jalankan kembali
+            print("🚀 Menjalankan bot kembali...")
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        elif command == "logs":
+            # Tampilkan logs
+            if LOG_FILE.exists():
+                os.system(f"tail -f {LOG_FILE}")
+            else:
+                print(f"❌ Log file tidak ditemukan: {LOG_FILE}")
+        elif command == "config":
+            # Edit config
+            editor = os.environ.get('EDITOR', 'nano')
+            os.system(f"{editor} {CONFIG_FILE}")
+        elif command in ["help", "-h", "--help"]:
+            print("""
+🤖 Backup Bot VPS - Systemd Service
+
+Penggunaan:
+  python3 backup-bot.py [command]
+
+Commands:
+  start     - Jalankan bot sebagai daemon
+  stop      - Hentikan bot
+  restart   - Restart bot
+  status    - Cek status bot
+  logs      - Tampilkan log live
+  config    - Edit file konfigurasi
+  help      - Tampilkan bantuan ini
+
+Tanpa command: Jalankan di foreground (debug)
+
+Konfigurasi:
+  Edit file: /opt/backup-bot/.bckupbot
+  Format:
+    Line 1: Bot Token
+    Line 2: Admin ID
+    Line 3: Status (on/off)
+    Line 4: Interval (1m, 30m, 1h, 6h, 12h, 24h)
+            """)
+        else:
+            print(f"❌ Command tidak dikenal: {command}")
+            print("💡 Gunakan 'help' untuk melihat semua command")
+    else:
+        # Jalankan di foreground (debug mode)
+        print("🔍 Debug mode - tekan Ctrl+C untuk berhenti")
+        run_bot()
 
 if __name__ == '__main__':
     main()
