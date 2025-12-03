@@ -877,7 +877,8 @@ function memasang_menu(){
 # Pastikan script ini dijalankan di direktori yang sama dengan file-file tersebut
 
 files=(
-    "restore"
+    "stop-private"
+	"restore"
 	"add-admin"
     "addhost"
     "addss"
