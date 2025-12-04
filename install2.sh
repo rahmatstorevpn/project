@@ -1008,7 +1008,8 @@ cd /usr/bin
 wget https://raw.github.com/rahmatstorevpn/project/main/update.sh
 rm update
 mv update.sh update    
-    rm -rf tspmenu.zip
+chmod +x update    
+	rm -rf tspmenu.zip
     print_success "Menu"
 }
 function memasang_profile(){
