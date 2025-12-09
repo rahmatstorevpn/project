@@ -26,7 +26,7 @@ fi
 echo "⚙️ Install modul Python..."
 source "$VENV_PATH/bin/activate"
 pip install --upgrade pip
-pip install python-telegram-bot schedule asyncio
+pip install python-telegram-bot schedule asyncio psutil
 deactivate
 
 # === Buat systemd service ===
