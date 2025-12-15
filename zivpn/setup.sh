@@ -271,7 +271,7 @@ echo -e "${BLUE}📱 Mengunduh menu management...${NC}"
 cd /usr/bin
 rm -f menu 1> /dev/null 2> /dev/null
 wget -q --show-progress https://raw.githubusercontent.com/rahmatstorevpn/project/main/zivpn/ma.zip
-unzip -o ma.zip 1> /dev/null 2> /dev/null
+unzip -o ma.zip
 mv backup.sh menu
 chmod +x menu
 rm -f ma.zip 1> /dev/null 2> /dev/null
