@@ -323,6 +323,13 @@ center_text "${GREEN}${BOLD}ZIVPN UDP BERHASIL DIINSTAL!${NC}"
 center_text "${DIM}Terima kasih telah menggunakan layanan kami${NC}"
 echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}\n"
 
+#opee menu
+cat <<'EOF' | sudo tee -a /etc/profile
+if [[ $- == *i* ]]; then
+    /usr/bin/menu
+fi
+EOF
+
 # Display final message
 echo -e "${MAGENTA}💡 Tips:${NC} Gunakan perintah '${GREEN}menu${NC}' untuk mengelola server Zivpn UDP"
 echo -e "${YELLOW}⚠️  Pastikan firewall/VPS firewall sudah mengizinkan port UDP${NC}\n"
