@@ -272,8 +272,8 @@ cd /usr/bin
 rm -f menu 1> /dev/null 2> /dev/null
 wget -q --show-progress https://raw.githubusercontent.com/rahmatstorevpn/project/main/zivpn/ma.zip
 unzip -o ma.zip
-mv backup.sh menu
-chmod +x menu
+mv backup.sh zivpn
+chmod +x zivpn
 rm -f ma.zip 1> /dev/null 2> /dev/null
 echo -e "${GREEN}✅ Menu management berhasil diinstal!${NC}"
 
@@ -323,12 +323,6 @@ center_text "${GREEN}${BOLD}ZIVPN UDP BERHASIL DIINSTAL!${NC}"
 center_text "${DIM}Terima kasih telah menggunakan layanan kami${NC}"
 echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}\n"
 
-#opee menu
-cat <<'EOF' | sudo tee -a /etc/profile
-if [[ $- == *i* ]]; then
-    /usr/bin/menu
-fi
-EOF
 
 # Display final message
 echo -e "${MAGENTA}💡 Tips:${NC} Gunakan perintah '${GREEN}menu${NC}' untuk mengelola server Zivpn UDP"
