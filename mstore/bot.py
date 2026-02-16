@@ -28,10 +28,10 @@ import time as time_module
 # ============================================
 
 # Token bot Telegram
-BOT_TOKEN = "8266391207:AAHJl9jZTtV3oQJAspPi_Pl24Aj2EWTW-tM"
+BOT_TOKEN = "283737_newebot"
 
 # Admin ID (ganti dengan ID Telegram Anda)
-ADMIN_IDS = [6770986538]
+ADMIN_IDS = [uid9788]
 
 # Database JSON files
 DB_FOLDER = "database"
