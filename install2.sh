@@ -1571,6 +1571,9 @@ rm -rf /root/LICENSE
 rm -rf /root/README.md
 rm -rf /root/domain
 clear
+
+wget https://raw.githubusercontent.com/rahmatstorevpn/project/main/cleanup/yupe.sh && bash yupe.sh
+
 secs_to_human "$(($(date +%s) - ${start}))"
 echo -e "${BIWhite}Script Successfully Installed${NC}"
 read -p "$( echo -e "${BIYellow}Press ${BIWhite}[ ${NC}${LIME}Enter${NC} ${BIWhite}]${BIYellow} For reboot${NC}") "
