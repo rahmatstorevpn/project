@@ -1,0 +1,147 @@
+#!/bin/bash
+
+# Warna untuk output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+FILE_PATH="/var/www/bot.py"
+BACKUP_PATH="/var/www/bot.py.backup"
+
+# Fungsi untuk mengecek file
+check_file() {
+    if [ ! -f "$FILE_PATH" ]; then
+        echo -e "${RED}❌ Error: File $FILE_PATH tidak ditemukan!${NC}"
+        exit 1
+    fi
+}
+
+# Fungsi untuk membuat backup
+create_backup() {
+    cp "$FILE_PATH" "$BACKUP_PATH"
+    echo -e "${GREEN}✅ Backup created: $BACKUP_PATH${NC}"
+}
+
+# Fungsi untuk menampilkan konfigurasi saat ini
+show_current_config() {
+    echo -e "\n${BLUE}📋 KONFIGURASI SAAT INI:${NC}"
+    echo "================================"
+    
+    # Tampilkan BOT_TOKEN (line 31)
+    bot_token=$(sed -n '31p' "$FILE_PATH")
+    echo -e "Line 31: ${YELLOW}$bot_token${NC}"
+    
+    # Tampilkan ADMIN_IDS (line 34) 
+    admin_ids=$(sed -n '34p' "$FILE_PATH")
+    echo -e "Line 34: ${YELLOW}$admin_ids${NC}"
+    echo "================================"
+}
+
+# Fungsi untuk edit BOT_TOKEN
+edit_bot_token() {
+    echo -e "\n${BLUE}🔑 Edit BOT_TOKEN (Line 31)${NC}"
+    echo "--------------------------------"
+    
+    # Tampilkan token lama
+    old_token=$(sed -n '31p' "$FILE_PATH")
+    echo -e "Token lama: ${YELLOW}$old_token${NC}"
+    
+    # Input token baru
+    read -p "Masukkan BOT_TOKEN baru: " new_token
+    
+    if [ -n "$new_token" ]; then
+        create_backup
+        # Escape karakter khusus untuk sed
+        new_token_escaped=$(echo "$new_token" | sed 's/[\/&]/\\&/g')
+        sed -i "31s/.*/BOT_TOKEN = \"$new_token_escaped\"/" "$FILE_PATH"
+        echo -e "${GREEN}✅ BOT_TOKEN berhasil diupdate!${NC}"
+    else
+        echo -e "${RED}❌ Token tidak boleh kosong!${NC}"
+    fi
+}
+
+# Fungsi untuk edit ADMIN_IDS
+edit_admin_ids() {
+    echo -e "\n${BLUE}👥 Edit ADMIN_IDS (Line 34)${NC}"
+    echo "--------------------------------"
+    
+    # Tampilkan admin IDs lama
+    old_admin=$(sed -n '34p' "$FILE_PATH")
+    echo -e "Admin IDs lama: ${YELLOW}$old_admin${NC}"
+    
+    # Input admin IDs baru
+    read -p "Masukkan ADMIN_IDS baru (contoh: [6770986538, 123456789]): " new_admin
+    
+    if [ -n "$new_admin" ]; then
+        create_backup
+        # Escape karakter khusus untuk sed
+        new_admin_escaped=$(echo "$new_admin" | sed 's/[\/&]/\\&/g')
+        sed -i "34s/.*/ADMIN_IDS = $new_admin_escaped/" "$FILE_PATH"
+        echo -e "${GREEN}✅ ADMIN_IDS berhasil diupdate!${NC}"
+    else
+        echo -e "${RED}❌ Admin IDs tidak boleh kosong!${NC}"
+    fi
+}
+
+# Fungsi untuk restore dari backup
+restore_backup() {
+    if [ -f "$BACKUP_PATH" ]; then
+        cp "$BACKUP_PATH" "$FILE_PATH"
+        echo -e "${GREEN}✅ Berhasil direstore dari backup!${NC}"
+    else
+        echo -e "${RED}❌ File backup tidak ditemukan!${NC}"
+    fi
+}
+
+# Main menu
+main_menu() {
+    check_file
+    
+    while true; do
+        clear
+        echo -e "${BLUE}╔════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║     📝 EDITOR BOT.PY MENU         ║${NC}"
+        echo -e "${BLUE}╚════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${GREEN}1)${NC} 🔑 Edit BOT_TOKEN (Line 31)"
+        echo -e "${GREEN}2)${NC} 👥 Edit ADMIN_IDS (Line 34)"
+        echo -e "${GREEN}3)${NC} 📖 Lihat konfigurasi saat ini"
+        echo -e "${GREEN}4)${NC} 🔄 Restore dari backup"
+        echo -e "${GREEN}5)${NC} ❌ Keluar"
+        echo ""
+        echo -n "Pilih menu [1-5]: "
+        read choice
+        
+        case $choice in
+            1)
+                show_current_config
+                edit_bot_token
+                ;;
+            2)
+                show_current_config
+                edit_admin_ids
+                ;;
+            3)
+                show_current_config
+                ;;
+            4)
+                restore_backup
+                ;;
+            5)
+                echo -e "${YELLOW}👋 Bye!${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}❌ Pilihan tidak valid!${NC}"
+                ;;
+        esac
+        
+        echo ""
+        read -p "Tekan Enter untuk kembali ke menu..."
+    done
+}
+
+# Run main menu
+main_menu
