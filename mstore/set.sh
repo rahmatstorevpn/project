@@ -51,7 +51,7 @@ source $VENV_PATH/bin/activate
 pip install --upgrade pip
 
 # Install packages
-pip install flask python-telegram-bot pillow paramiko
+pip install flask python-telegram-bot pillow paramiko requests
 check_error "Gagal install packages"
 
 deactivate
