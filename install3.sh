@@ -1,4 +1,5 @@
 #!/bin/bash
+# install3.sh - safer variant based on install2.sh
 clear
 export DEBIAN_FRONTEND=noninteractive
 FONT='\033[0m'
@@ -113,7 +114,7 @@ if [ "${EUID}" -ne 0 ]; then
 fi
 if [ "$(systemd-detect-virt)" == "openvz" ]; then
     echo -e "${RED}OpenVZ is not supported"
-    exit 1
+    return
 fi
 IP=$(curl -sS icanhazip.com)
 if [[ -z $IP ]]; then
@@ -126,7 +127,7 @@ if [[ $ARCH == "x86_64" ]]; then
     echo -e "${BIWhite}Your Architecture Is Supported ${LIME}${ARCH}${NC}"
 else
     echo -e "${RED}Your Architecture Is Not Supported ${YELLOW}${ARCH}${NC}"
-    exit 1
+    return
 fi
 OS_ID=$(grep -w ^ID /etc/os-release | cut -d= -f2 | tr -d '"')
 OS_NAME=$(grep -w ^PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
@@ -134,16 +135,10 @@ if [[ $OS_ID == "ubuntu" || $OS_ID == "debian" ]]; then
     echo -e "${BIWhite}Your OS Is Supported ${LIME}${OS_NAME}${NC}"
 else
     echo -e "${RED}Your OS Is Not Supported ${YELLOW}${OS_NAME}${NC}"
-    exit 1
+    return
 fi
 echo ""
-echo -e "${RED}PERINGATAN: Installer ini mengubah konfigurasi SSH, jaringan, dan layanan VPS."
-echo -e "${RED}Installer ini ditujukan untuk VPS BARU/kosong, bukan server produksi yang sudah berisi akun."
-read -r -p "Ketik INSTALL untuk melanjutkan: " confirm_install
-if [[ "$confirm_install" != "INSTALL" ]]; then
-    echo "Instalasi dibatalkan."
-    exit 1
-fi
+read -p "$( echo -e "${BIWhite}Press ${LIME}[${BIWhite} Enter ${LIME}]${BIWhite} For Starting Installation${NC}") "
 echo ""
 clear
 REPO="https://raw.githubusercontent.com/rahmatstorevpn/project/main/"
@@ -182,7 +177,7 @@ mkdir -p /etc/xray
 curl -s ifconfig.me > /etc/xray/ipvps
 touch /etc/xray/domain
 mkdir -p /var/log/xray
-chown -R www-data:www-data /var/log/xray
+chown www-data:www-data /var/log/xray
 chmod 750 /var/log/xray
 touch /var/log/xray/access.log /var/log/xray/error.log
 chown www-data:www-data /var/log/xray/access.log /var/log/xray/error.log
@@ -357,27 +352,23 @@ memasang_notifikasi_bot() {
   local TIMEZONE=$(date +'%Y-%m-%d %H:%M:%S %Z')
   local CITY=$(curl -s ipinfo.io/city)
   local ISP=$(curl -s ipinfo.io/org | cut -d " " -f 2-10)
-  local TELEGRAM_CONFIG="/root/.config/alzena/telegram.env"
-  if [[ ! -f "$TELEGRAM_CONFIG" ]]; then
-    echo "Notifikasi Telegram dilewati (belum ada $TELEGRAM_CONFIG)."
-    return 0
-  fi
-  # File konfigurasi dibuat dan diisi sendiri oleh administrator.
-  source "$TELEGRAM_CONFIG"
   local CHATID="${TELEGRAM_CHAT_ID:-}"
-  local KEY="${TELEGRAM_BOT_TOKEN:-}"
-  if [[ -z "$CHATID" || -z "$KEY" ]]; then
-    echo "Notifikasi Telegram dilewati: token/chat ID belum diatur."
-    return 0
+  local KEY=""
+  local URL=""
+  if [[ -f /etc/nusa-sari/telegram.env ]]; then
+    # Optional private settings file; never commit this file to GitHub.
+    source /etc/nusa-sari/telegram.env
+    CHATID="${TELEGRAM_CHAT_ID:-$CHATID}"
+    KEY="${TELEGRAM_BOT_TOKEN:-}"
+    URL="https://api.telegram.org/bot$KEY/sendMessage"
   fi
-  local URL="https://api.telegram.org/bot$KEY/sendMessage"
   local TIME="10"
 
   local TEXT="
 <b>━━━━━━━━━━━━━━━━━</b>
  <b>  🏷️ NOTIFICATIONS🏷️</b>
 <b>━━━━━━━━━━━━━━━━━</b>
-<b>Autoscript Installation v25.5.16 (install3 hardened)</b>
+<b>Autoscript Installation v25.5.16</b>
 <b>Name :</b> <code>$username</code>
 <b>Time :</b> <code>$TIMEZONE</code>
 <b>Domain :</b> <code>$domain</code>
@@ -394,7 +385,11 @@ memasang_notifikasi_bot() {
 "
   
   local INLINE_KEYBOARD='{"inline_keyboard":[[{"text":"Telegram","url":"https://t.me/amqyu"}]]}'
-  
+
+  if [[ -z "$KEY" || -z "$CHATID" ]]; then
+    echo "Notifikasi Telegram dilewati: token/chat ID belum dikonfigurasi."
+    return 0
+  fi
   curl -s --max-time "$TIME" -d "chat_id=$CHATID&disable_web_page_preview=1&text=$TEXT&parse_mode=html&reply_markup=$INLINE_KEYBOARD" "$URL" >/dev/null
 }
 function memasang_ssl() {
@@ -414,20 +409,13 @@ function memasang_ssl() {
     /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
     /root/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256
     ~/.acme.sh/acme.sh --installcert -d $domain --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key --ecc
-    chmod 777 /etc/xray/xray.key
+    chown root:www-data /etc/xray/xray.key
+    chmod 640 /etc/xray/xray.key
     print_success "Sertifikat SSL Pada Domain"
 }
 function memasang_folder_xray() {
     clear
     print_install "Membuat Folder Tambahan Untuk SSH & Xray"
-    rm -rf /etc/user_locks.db
-    rm -rf /etc/ssh/.ssh.db
-    rm -rf /etc/vmess/.vmess.db
-    rm -rf /etc/vless/.vless.db
-    rm -rf /etc/trojan/.trojan.db
-    rm -rf /etc/shadowsocks/.shadowsocks.db
-    rm -rf /etc/bot/.bot.db
-    rm -rf /etc/user-create/user.log
     mkdir -p /etc/bot
     mkdir -p /etc/ssh
     mkdir -p /etc/xray
@@ -449,12 +437,12 @@ function memasang_folder_xray() {
     mkdir -p /etc/limit/trojan
     mkdir -p /etc/limit/shadowsocks
     mkdir -p /etc/user-create
-    chown -R www-data:www-data /var/log/xray
     chmod 750 /var/log/xray
     touch /etc/xray/domain
     touch /etc/user_locks.db
-    touch /var/log/xray/access.log /var/log/xray/error.log
-    chown www-data:www-data /var/log/xray/access.log /var/log/xray/error.log
+    touch /var/log/xray/access.log
+    touch /var/log/xray/error.log
+    chown www-data:www-data /var/log/xray /var/log/xray/access.log /var/log/xray/error.log
     chmod 640 /var/log/xray/access.log /var/log/xray/error.log
     touch /etc/ssh/.ssh.db
     touch /etc/vmess/.vmess.db
@@ -596,8 +584,11 @@ rm -f /root/vnstat-2.6.tar.gz >/dev/null 2>&1
 rm -rf /root/vnstat-2.6 >/dev/null 2>&1
 print_success "Vnstat"
 }
-# Rclone dipasang tanpa kredensial bawaan. Administrator dapat menjalankan
-# `rclone config` sendiri setelah instalasi.
+get_rclone_config_base64() {
+  # No reusable OAuth token is embedded in this public installer.
+  # Configure rclone separately with: rclone config
+  return 0
+}
 
 memasang_pencadangan() {
   clear
@@ -605,9 +596,9 @@ memasang_pencadangan() {
   export DEBIAN_FRONTEND=noninteractive
   apt update && apt install rclone -y
 
+  local rclone_b64_config=$(get_rclone_config_base64)
   mkdir -p /root/.config/rclone/
-  chmod 700 /root/.config/rclone/
-  echo "Rclone terpasang tanpa token bawaan. Jalankan 'rclone config' untuk menghubungkan akun Anda."
+  echo "$rclone_b64_config" | base64 -d > /root/.config/rclone/rclone.conf
   
   cd /bin
   git clone https://github.com/magnific0/wondershaper.git
@@ -618,7 +609,8 @@ memasang_pencadangan() {
   echo > /home/limit
 
   apt install msmtp-mta ca-certificates bsd-mailx -y
-  echo "msmtp terpasang tanpa kredensial bawaan. Konfigurasikan akun email sendiri bila diperlukan."
+  # SMTP credentials are intentionally not embedded in this public installer.
+  # Configure /etc/msmtprc manually if email notifications are required.
   print_success "Pencadangan Server"
 }
 function memasang_bbr_hybla(){
@@ -691,7 +683,7 @@ EOF
   echo -e "${YELLOW} Mengkonfigurasi QoS untuk prioritas paket...${NC}"
   cat > /usr/local/sbin/network-tune.sh << 'EOF'
 #!/bin/bash
-# Tidak mengubah atau mengosongkan rules firewall. QoS hanya mengatur qdisc tc.
+# Firewall rules are intentionally left untouched by install3.sh.
 INTERFACES=$(ip -o -4 addr show | awk '{print $2}' | grep -v "lo" | cut -d/ -f1)
 for IFACE in $INTERFACES; do
     tc qdisc del dev $IFACE root 2> /dev/null
@@ -790,23 +782,8 @@ function memasang_fail2ban(){
 function memasang_netfilter(){
 clear
 print_install "Memasang Netfilter & IPtables"
-mkdir -p /usr/local/share/xray
-for data_file in geosite.dat geoip.dat; do
-    data_tmp="/usr/local/share/xray/${data_file}.tmp"
-    if curl -fL --retry 3 --connect-timeout 15 -o "$data_tmp" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/${data_file}"; then
-        if [[ -s "$data_tmp" ]]; then
-            mv -f "$data_tmp" "/usr/local/share/xray/${data_file}"
-        else
-            rm -f "$data_tmp"
-            echo "ERROR: ${data_file} kosong; instalasi dihentikan." >&2
-            exit 1
-        fi
-    else
-        rm -f "$data_tmp"
-        echo "ERROR: gagal mengunduh ${data_file}; periksa koneksi lalu ulangi." >&2
-        exit 1
-    fi
-done
+wget -q -O /usr/local/share/xray/geosite.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" >/dev/null 2>&1
+wget -q -O /usr/local/share/xray/geoip.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" >/dev/null 2>&1
 iptables-save > /etc/iptables.up.rules
 iptables-restore -t < /etc/iptables.up.rules
 netfilter-persistent save
@@ -831,18 +808,6 @@ print_success "BadVPN"
 }
 function memasang_restart(){
 clear
-print_install "Memvalidasi konfigurasi dan permission Xray"
-mkdir -p /var/log/xray /run/xray
-chown -R www-data:www-data /var/log/xray /run/xray
-chmod 750 /var/log/xray
- touch /var/log/xray/access.log /var/log/xray/error.log
-chown www-data:www-data /var/log/xray/access.log /var/log/xray/error.log
-chmod 640 /var/log/xray/access.log /var/log/xray/error.log
-if ! /usr/local/bin/xray run -test -config /etc/xray/config.json; then
-    echo "ERROR: konfigurasi Xray tidak valid. Periksa /etc/xray/config.json dan geodata." >&2
-    exit 1
-fi
-print_success "Validasi Xray dan permission log"
 print_install "Memulai Semua Services"
 systemctl daemon-reload
 systemctl restart nginx
@@ -859,6 +824,15 @@ systemctl restart noobzvpns
 systemctl restart haproxy
 systemctl start netfilter-persistent
 systemctl enable --now nginx
+mkdir -p /var/log/xray
+ touch /var/log/xray/access.log /var/log/xray/error.log
+chown -R www-data:www-data /var/log/xray
+chmod 750 /var/log/xray
+chmod 640 /var/log/xray/access.log /var/log/xray/error.log
+if ! /usr/local/bin/xray run -test -config /etc/xray/config.json; then
+    echo -e "${RED}Konfigurasi Xray tidak valid. Xray tidak akan diaktifkan.${NC}"
+    exit 1
+fi
 systemctl enable --now xray
 systemctl enable --now haproxy
 systemctl enable --now udp-custom
@@ -1547,6 +1521,17 @@ EOF
 }
 function mulai_penginstallan(){
     clear
+    if [[ "$EUID" -ne 0 ]]; then
+        echo "Jalankan installer sebagai root."
+        exit 1
+    fi
+    echo "PERINGATAN: Installer akan mengubah konfigurasi dan memasang layanan VPN."
+    echo "Gunakan hanya pada VPS baru/kosong. Pastikan backup tersedia."
+    read -r -p "Ketik LANJUT untuk meneruskan instalasi: " confirm_install
+    if [[ "$confirm_install" != "LANJUT" ]]; then
+        echo "Instalasi dibatalkan."
+        exit 0
+    fi
     setup_grub_env
     tampilan
     mengecek_akses_root
