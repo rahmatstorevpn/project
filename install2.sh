@@ -879,6 +879,8 @@ function memasang_menu(){
 files=(
     "update"
     "run"
+    "userssh"
+    "uservm"
 	"stop-private"
 	"restore"
 	"add-admin"
