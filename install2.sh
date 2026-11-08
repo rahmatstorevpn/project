@@ -878,6 +878,7 @@ function memasang_menu(){
 
 files=(
     "update"
+    "run"
 	"stop-private"
 	"restore"
 	"add-admin"
@@ -1003,6 +1004,17 @@ done
 
 echo ""
 echo "=== Selesai ==="
+
+# Pastikan helper Running Check dapat dieksekusi jika disediakan oleh paket menu.
+if [ -f /usr/bin/run ]; then
+    chown root:root /usr/bin/run
+    chmod 755 /usr/bin/run
+    echo "✓ Permission /usr/bin/run disetel ke 755"
+else
+    echo "PERINGATAN: /usr/bin/run tidak ditemukan setelah ekstraksi menu."
+    echo "Running Check mungkin belum tersedia; periksa isi tspmenu.zip."
+fi
+
 cd /usr/bin
 
 wget https://raw.github.com/rahmatstorevpn/project/main/update.sh
