@@ -208,6 +208,11 @@
       "tag": "direct"
     },
     {
+      "protocol": "freedom",
+      "settings": {},
+      "tag": "api"
+    },
+    {
       "protocol": "blackhole",
       "settings": {},
       "tag": "blocked"
@@ -218,7 +223,14 @@
     "rules": [
       {
         "type": "field",
-        "outboundTag": "direct",
+        "inboundTag": [
+          "api"
+        ],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
         "protocol": [
           "bittorrent"
         ]
@@ -241,20 +253,6 @@
           "::1/128",
           "fc00::/7",
           "fe80::/10"
-        ]
-      },
-      {
-        "type": "field",
-        "inboundTag": [
-          "api"
-        ],
-        "outboundTag": "api"
-      },
-      {
-        "type": "field",
-        "outboundTag": "blocked",
-        "protocol": [
-          "bittorrent"
         ]
       },
       {
